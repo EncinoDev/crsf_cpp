@@ -4,6 +4,7 @@
 #include "crsf/crc8.hpp"
 #include "crsf/failsafe.hpp"
 #include "crsf/frame_builder.hpp"
+#include "crsf/link_quality.hpp"
 #include "crsf/parser.hpp"
 #include "crsf/protocol.hpp"
 #include "crsf/rc_channels.hpp"

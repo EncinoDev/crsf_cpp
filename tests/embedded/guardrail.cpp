@@ -17,6 +17,7 @@ crsf::Parser<crsf::Crc8Dvb> g_lut_parser;
 crsf::Parser<crsf::Crc8DvbBitShift> g_shift_parser;
 crsf::RcChannels g_channels{};
 std::array<std::uint8_t, crsf::kMaxFrameSize> g_frame{};
+crsf::LinkQuality<4> g_quality{};
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 }  // namespace
@@ -41,6 +42,27 @@ extern "C" std::size_t crsf_guardrail_inject(void)
 extern "C" std::uint8_t crsf_guardrail_shift_parse(std::uint8_t byte)
 {
   return static_cast<std::uint8_t>(g_shift_parser.feed(byte));
+}
+
+// The stateless span entry point: nothing here holds the bytes but the caller.
+extern "C" std::size_t crsf_guardrail_span_parse(const std::uint8_t* data, std::size_t size)
+{
+  const auto result = crsf::parse(std::span<const std::uint8_t>{data, size});
+  if (result.status != crsf::ParseStatus::kFrameReady) {
+    return 0;
+  }
+  return crsf::decode_rc_channels(result.frame.payload, g_channels) ? result.consumed : 0;
+}
+
+extern "C" std::uint8_t crsf_guardrail_link_quality(int received, int missed)
+{
+  for (int i = 0; i < received; ++i) {
+    g_quality.on_frame(true);
+  }
+  for (int i = 0; i < missed; ++i) {
+    g_quality.on_missed();
+  }
+  return g_quality.percent();
 }
 
 extern "C" void crsf_guardrail_reset(void)
@@ -111,6 +133,9 @@ constexpr bool decodes_expected_frame()
 }
 
 }  // namespace
+
+static_assert(crsf::parse(kCenteredFrame).status == crsf::ParseStatus::kFrameReady, "span parse differs on this target");
+static_assert(crsf::parse(kCenteredFrame).consumed == kCenteredFrame.size());
 
 static_assert(builds_expected_frame(), "wire format differs on this target");
 static_assert(decodes_expected_frame(), "decode differs on this target");

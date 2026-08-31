@@ -155,7 +155,21 @@ other polynomials.
 
 ### `crsf/parser.hpp` — frame parser
 
+Two entry points do the same job — find a frame boundary, validate length and CRC, hand back a
+view. They differ in **who owns the bytes**.
+
 ```cpp
+// Caller owns the bytes. Stateless free function, nothing copied.
+template <typename Crc8Policy = Crc8Dvb>
+ParseResult parse(std::span<const std::uint8_t> data) noexcept;
+
+struct ParseResult {
+  ParseStatus status;
+  std::size_t consumed;   // how far to advance the input
+  FrameView   frame;      // valid when status == kFrameReady; points into `data`
+};
+
+// Parser owns the bytes. Accumulates across calls.
 template <typename Crc8Policy = Crc8Dvb>
 class Parser {
  public:
@@ -164,6 +178,53 @@ class Parser {
   void reset() noexcept;                          // discard partial frame
 };
 ```
+
+#### Which one to call
+
+| | `parse(span)` | `Parser::feed(byte)` |
+| --- | --- | --- |
+| Owns the bytes | Caller | Parser (64 B internal) |
+| State / RAM | None — free function | 84 B per instance |
+| `FrameView` lifetime | As long as you keep the buffer | Until the next `feed()` |
+| Recovery after a bad frame | Slides 1 byte, retries | Discards the buffer |
+| Natural transport | DMA, or any contiguous block | Per-byte RX interrupt |
+
+**Use `parse()` when the bytes are already contiguous in memory** — a DMA buffer, a test vector, a
+block read from a file or socket. This is the zero-copy path: `frame.payload` aliases your buffer,
+so nothing is copied and no parser object exists.
+
+**Use `feed()` when bytes arrive one at a time** — a per-byte RX interrupt, where a frame spans
+many interrupts and no contiguous span exists yet. Looping `feed()` over a buffer you already hold
+works, but copies every byte a second time for no benefit.
+
+They are not exclusive: a driver can use `feed()` across a ring-buffer wrap and `parse()` for the
+contiguous remainder.
+
+#### `consumed`, and why bad frames advance by one
+
+| `status` | `consumed` |
+| --- | --- |
+| `kFrameReady` | Whole frame — advance past it |
+| `kIncomplete` | `0` — keep the bytes, wait for more |
+| `kInvalidLength` / `kCrcMismatch` | `1` — slide one byte and retry |
+
+Advancing a single byte after a rejected frame is what lets `parse()` lock onto a frame that starts
+part-way through garbage, including garbage whose length byte points into the real frame. `feed()`
+cannot do this — it discards its buffer instead — so the two recover differently by design. A
+rejected frame costs `feed()` up to one frame; `parse()` recovers at the first valid boundary.
+
+```cpp
+std::span<const std::uint8_t> remaining{dma_buffer, bytes_received};
+while (!remaining.empty()) {
+  const auto result = crsf::parse(remaining);
+  if (result.status == crsf::ParseStatus::kIncomplete) break;   // need more bytes
+  if (result.status == crsf::ParseStatus::kFrameReady) handle(result.frame);
+  remaining = remaining.subspan(result.consumed);
+}
+```
+
+**Ring buffers.** A span cannot describe a frame that wraps the end of a ring. Use a linear
+double-buffer (the usual DMA pattern), or fall back to `feed()` across the wrap.
 
 `ParseStatus`:
 
@@ -241,6 +302,51 @@ the config is data rather than a hard-coded rule — the bridge persists the rea
 `last_valid` is a required argument rather than an optional one so that a config containing `kHold`
 cannot silently fall back to a centre value. Initialise it to a safe frame at boot: before the first
 valid frame there is nothing to hold.
+
+### `crsf/link_quality.hpp` — EWMA filter and link quality
+
+```cpp
+template <int Shift, typename T = std::uint32_t>
+class Ewma {
+  void reset(T value) noexcept;
+  T    update(T sample) noexcept;
+  T    value() const noexcept;
+};
+
+template <int Shift = 4>
+class LinkQuality {
+  void on_frame(bool crc_ok) noexcept;   // a frame arrived
+  void on_missed() noexcept;             // an expected frame did not
+  void reset(std::uint8_t percent) noexcept;
+  std::uint8_t percent() const noexcept;
+};
+```
+
+An exponentially weighted moving average keeps **one** number instead of a window of samples:
+
+```
+value = alpha x sample + (1 - alpha) x value
+```
+
+with `alpha = 1 / 2^Shift`. O(1) memory, O(1) time, no buffer — which is why it is the standard
+smoothing filter on an MCU. `Shift` is the whole tuning knob:
+
+| `Shift` | alpha | Remembers roughly | At a 150 Hz frame rate |
+| --- | --- | --- | --- |
+| 2 | 1/4 | 4 samples | ~27 ms |
+| 4 (default) | 1/16 | 16 samples | ~107 ms |
+| 6 | 1/64 | 64 samples | ~427 ms |
+
+Implemented in integers: the accumulator holds the value scaled by `2^Shift`, so the update is
+shifts and adds with no division and no floating point. That matters because `crsf_cpp` builds for
+cores without an FPU (Cortex-M0+ is in the portability set), where floats would become soft-float
+calls and pull in symbols the bare-metal gate rejects.
+
+**The caller owns the clock.** `LinkQuality` must be told about *missed* frames as well as received
+ones — a link that stops cleanly delivers no frames at all, so a filter fed only by arrivals would
+report its last value forever. `crsf_cpp` holds no clock by design (same reason `Parser` has no
+byte-gap timeout), so the firmware drives `on_missed()` from the timer it already runs for its
+source-loss timeout. Quality starts at 0 rather than assuming a healthy link.
 
 ### `crsf/frame_builder.hpp` — frame construction
 

@@ -1,5 +1,7 @@
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "crsf/crsf.hpp"
 
@@ -43,5 +45,29 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
       __builtin_trap();
     }
   }
+  // Recovery differs from feed() by design, so the two are not asserted to agree; what must hold is
+  // that parse() never walks outside the caller's buffer.
+  std::span<const std::uint8_t> remaining{data, size};
+  while (!remaining.empty()) {
+    const auto result = crsf::parse(remaining);
+    if (result.status == crsf::ParseStatus::kIncomplete) {
+      break;
+    }
+    if (result.consumed == 0 || result.consumed > remaining.size()) {
+      __builtin_trap();
+    }
+    if (result.status == crsf::ParseStatus::kFrameReady) {
+      const std::uint8_t* payload = result.frame.payload.data();
+      if (payload < remaining.data() || payload + result.frame.payload.size() > data + size) {
+        __builtin_trap();
+      }
+      const auto verify = crsf::parse(remaining.first(result.consumed));
+      if (verify.status != crsf::ParseStatus::kFrameReady || verify.consumed != result.consumed) {
+        __builtin_trap();
+      }
+    }
+    remaining = remaining.subspan(result.consumed);
+  }
+
   return 0;
 }
