@@ -4,6 +4,6 @@
 
 TEST(CrsfCppSmoke, VersionConstantsExposed)
 {
-  EXPECT_EQ(crsf::kVersionMajor, 0u);
-  EXPECT_EQ(crsf::kVersionMinor, 1u);
+  EXPECT_EQ(crsf::kVersionMajor, 0U);
+  EXPECT_EQ(crsf::kVersionMinor, 1U);
 }
