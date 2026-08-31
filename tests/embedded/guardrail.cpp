@@ -34,7 +34,7 @@ extern "C" std::size_t crsf_guardrail_ingest(std::uint8_t byte)
 
 extern "C" std::size_t crsf_guardrail_inject(void)
 {
-  g_channels = crsf::make_centered_channels();
+  g_channels = crsf::make_failsafe_channels(crsf::make_aetr_failsafe_config(), g_channels);
   return crsf::build_rc_channels_frame<crsf::Crc8DvbBitShift>(crsf::kAddressFlightController, g_channels, g_frame);
 }
 
@@ -63,6 +63,8 @@ extern "C" std::uint32_t crsf_guardrail_bits(const std::uint8_t* data, std::size
 // Proves the CRC and packing paths are usable in constant expressions on the target too.
 static_assert(crsf::Crc8Dvb::update(0, 0) == crsf::Crc8DvbBitShift::update(0, 0));
 static_assert(crsf::make_centered_channels()[0] == crsf::kRcChannelMid);
+static_assert(crsf::make_failsafe_channels(crsf::make_aetr_failsafe_config(), crsf::make_centered_channels())[crsf::kAetrThrottleIndex] ==
+              crsf::kRcChannelMin);
 
 // Wire-format conformance, evaluated by the compiler for whatever target it is building. The
 // codec never type-puns or memcpys a multi-byte integer, so byte order cannot vary; these

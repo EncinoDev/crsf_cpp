@@ -13,6 +13,7 @@ add_executable(
     bit_packing_test.cpp
     parser_test.cpp
     round_trip_test.cpp
+    failsafe_test.cpp
     vectors_test.cpp)
 target_link_libraries(crsf_cpp_tests PRIVATE crsf::crsf GTest::gtest_main)
 target_compile_definitions(crsf_cpp_tests PRIVATE CRSF_TEST_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/vectors")

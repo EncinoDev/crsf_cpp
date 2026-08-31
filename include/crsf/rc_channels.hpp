@@ -40,6 +40,8 @@ constexpr bool encode_rc_channels(const RcChannels& channels, std::span<std::uin
   return writer.finish() == kRcChannelsPayloadSize;
 }
 
+// Neutral sticks, for emulators and test frames. NOT a failsafe frame: centre is half throttle.
+// See crsf/failsafe.hpp.
 constexpr RcChannels make_centered_channels() noexcept
 {
   RcChannels channels{};

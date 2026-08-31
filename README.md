@@ -197,6 +197,51 @@ Both return `false` if the buffer is smaller than `kRcChannelsPayloadSize`. Valu
 11 bits are masked on encode, matching what a source puts on the wire; clamp beforehand if
 out-of-range input should instead be treated as an error.
 
+`make_centered_channels()` is for emulators and test frames. It is **not** a failsafe frame — see
+below for why.
+
+### `crsf/failsafe.hpp` — failsafe channel policy
+
+```cpp
+enum class FailsafeMode : std::uint8_t { kCenter, kMin, kMax, kHold, kValue };
+
+struct FailsafeChannel {
+  FailsafeMode mode = FailsafeMode::kCenter;
+  std::uint16_t value = kRcChannelMid;   // read only when mode == kValue
+};
+
+using FailsafeConfig = std::array<FailsafeChannel, kRcChannelCount>;
+
+RcChannels make_failsafe_channels(const FailsafeConfig& config,
+                                  const RcChannels& last_valid) noexcept;
+FailsafeConfig make_aetr_failsafe_config() noexcept;
+```
+
+The policy is **per channel**, because "safe" is not one value across all axes. Centring a steering
+axis is correct; centring a throttle is half power. A single global rule gets one of the two wrong,
+so each channel carries its own mode:
+
+| Mode | Result | Typical use |
+| --- | --- | --- |
+| `kCenter` | `kRcChannelMid` (992) | Steering, attitude axes |
+| `kMin` | `kRcChannelMin` (172) | Throttle; disarm on a switch channel |
+| `kMax` | `kRcChannelMax` (1811) | A switch whose safe position is high |
+| `kHold` | `last_valid[i]` | Aux switches whose state should survive the dropout |
+| `kValue` | `config[i].value` | Anything else — a specific parachute or brake position |
+
+`kHold` is the one to think twice about on a control axis: holding the last commanded value means a
+link that dies at full throttle stays at full throttle. It is the right default for aux switches and
+the wrong one for anything that moves the machine.
+
+`make_aetr_failsafe_config()` centres everything and drops channel 3 to minimum. That assumes the
+**AETR** order ELRS ships by default (1 roll, 2 pitch, 3 throttle, 4 yaw); a transmitter set to TAER
+or a custom map puts throttle elsewhere. The library cannot detect the mapping, which is exactly why
+the config is data rather than a hard-coded rule — the bridge persists the real one in Flash.
+
+`last_valid` is a required argument rather than an optional one so that a config containing `kHold`
+cannot silently fall back to a centre value. Initialise it to a safe frame at boot: before the first
+valid frame there is nothing to hold.
+
 ### `crsf/frame_builder.hpp` — frame construction
 
 ```cpp
@@ -295,8 +340,8 @@ cmake --preset asan  && cmake --build --preset asan  && ctest --preset asan
 ```
 
 The suite covers CRC equivalence and the public catalog value, bit-packing round trips across
-widths 10–13, parser framing (length bounds, CRC rejection, recovery, back-to-back frames), and
-full build -> parse -> decode cycles.
+widths 10–13, parser framing (length bounds, CRC rejection, recovery, back-to-back frames),
+failsafe mode resolution, and full build -> parse -> decode cycles.
 
 Test vectors are generated data, not hand-written literals:
 
