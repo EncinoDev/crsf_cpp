@@ -131,8 +131,21 @@ if (size != 0) {
 | `kRcChannelBits` | `11` | Bits per channel |
 | `kRcChannelsPayloadSize` | `22` | `16 x 11 bits`, exactly byte-aligned |
 | `kRcChannelMin/Mid/Max` | `172/992/1811` | Raw tick values for the usual 988/1500/2012 us positions |
+| `kExtendedFrameTypeMin/Max` | `0x28/0x96` | Types in this range carry routing addresses |
+| `kExtendedAddressFieldsSize` | `2` | Destination + origin, ahead of the payload |
 
-`enum class FrameType : std::uint8_t { kRcChannelsPacked = 0x16 };`
+```cpp
+enum class FrameType : std::uint8_t {
+  kLinkStatistics = 0x14,  kRcChannelsPacked = 0x16,
+  kDevicePing = 0x28,      kDeviceInfo = 0x29,
+  kParameterSettingsEntry = 0x2B, kParameterRead = 0x2C, kParameterWrite = 0x2D,
+};
+
+constexpr bool is_extended_frame_type(std::uint8_t type) noexcept;
+```
+
+Addresses: `kAddressBroadcast` `0x00`, `kAddressFlightController` `0xC8`, `kAddressReserved2` `0xCA`,
+`kAddressRadioTransmitter` `0xEA`, `kAddressCrsfReceiver` `0xEC`, `kAddressCrsfTransmitter` `0xEE`.
 
 **Frame layout.** `<address> <length> <type> <payload...> <crc>`. The length byte counts
 *type + payload + CRC* — not itself and not the address. The CRC covers *type + payload* only.
@@ -199,6 +212,22 @@ works, but copies every byte a second time for no benefit.
 
 They are not exclusive: a driver can use `feed()` across a ring-buffer wrap and `parse()` for the
 contiguous remainder.
+
+#### Extended-header frames
+
+Frame types `0x28`–`0x96` carry a destination and an origin address ahead of the payload, so a frame
+can be routed between two devices on a shared bus. `FrameView::payload` stays whole — routing bytes
+included — so callers that predate this see no change; the accessors read them out:
+
+```cpp
+bool                         extended()       const noexcept;
+std::uint8_t                 ext_destination() const noexcept;
+std::uint8_t                 ext_origin()      const noexcept;
+std::span<const std::uint8_t> ext_payload()    const noexcept;  // payload minus the two addresses
+```
+
+`extended()` is false — and the others return zero / an empty span — when the payload is too short
+to hold the fields, so a truncated frame cannot be read past.
 
 #### `consumed`, and why bad frames advance by one
 
@@ -405,8 +434,16 @@ an invalid length byte is rejected immediately, and a bad frame fails the CRC ga
 
 If a source can stall mid-frame and later resume, a stale partial frame would merge with the new
 one and cost a single frame before recovery. If that matters, run a byte-gap timer in your driver
-and call `reset()` when it expires. At 420 kbaud a gap longer than one frame time (~1.5 ms for a
-maximal frame) is a reasonable threshold.
+and call `reset()` when it expires. `crsf/timing.hpp` gives you the threshold:
+
+```cpp
+std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) noexcept;  // rounded up
+std::uint32_t byte_gap_timeout_us(std::uint32_t baud) noexcept;  // max frame + 15%; 1752 us at 420k
+```
+
+Both are `constexpr` and assume 10 bits per byte (1 start, 8 data, 1 stop, no parity). A zero baud
+yields zero rather than dividing by zero. Taking `baud` as an argument is the point: a threshold
+fixed for one rate is far too short at the slow end of an auto-detect sweep.
 
 ## Footprint and performance
 
@@ -445,9 +482,9 @@ cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 cmake --preset asan  && cmake --build --preset asan  && ctest --preset asan
 ```
 
-The suite covers CRC equivalence and the public catalog value, bit-packing round trips across
+75 tests covering CRC equivalence and the public catalog value, bit-packing round trips across
 widths 10–13, parser framing (length bounds, CRC rejection, recovery, back-to-back frames),
-failsafe mode resolution, and full build -> parse -> decode cycles.
+extended-header routing fields, baud-derived gap timeouts, failsafe mode resolution, and full build -> parse -> decode cycles.
 
 Test vectors are generated data, not hand-written literals:
 

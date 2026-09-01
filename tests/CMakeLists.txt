@@ -16,6 +16,8 @@ add_executable(
     failsafe_test.cpp
     span_parse_test.cpp
     link_quality_test.cpp
+    extended_frame_test.cpp
+    timing_test.cpp
     vectors_test.cpp)
 target_link_libraries(crsf_cpp_tests PRIVATE crsf::crsf GTest::gtest_main)
 target_compile_definitions(crsf_cpp_tests PRIVATE CRSF_TEST_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/vectors")

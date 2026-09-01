@@ -8,4 +8,5 @@
 #include "crsf/parser.hpp"
 #include "crsf/protocol.hpp"
 #include "crsf/rc_channels.hpp"
+#include "crsf/timing.hpp"
 #include "crsf/version.hpp"

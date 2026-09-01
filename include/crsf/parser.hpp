@@ -18,10 +18,25 @@ enum class ParseStatus : std::uint8_t {
 };
 
 // Payload views memory the parser does not own; see Parser::feed and parse() for its lifetime.
+// `payload` stays whole on extended frames; the ext_* accessors read the routing fields out of it.
 struct FrameView {
   std::uint8_t address = 0;
   std::uint8_t type = 0;
   std::span<const std::uint8_t> payload;
+
+  [[nodiscard]] constexpr bool extended() const noexcept
+  {
+    return is_extended_frame_type(type) && payload.size() >= kExtendedAddressFieldsSize;
+  }
+
+  [[nodiscard]] constexpr std::uint8_t ext_destination() const noexcept { return extended() ? payload[0] : 0; }
+
+  [[nodiscard]] constexpr std::uint8_t ext_origin() const noexcept { return extended() ? payload[1] : 0; }
+
+  [[nodiscard]] constexpr std::span<const std::uint8_t> ext_payload() const noexcept
+  {
+    return extended() ? payload.subspan(kExtendedAddressFieldsSize) : std::span<const std::uint8_t>{};
+  }
 };
 
 namespace detail {

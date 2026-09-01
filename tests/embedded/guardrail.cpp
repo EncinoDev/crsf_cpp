@@ -54,6 +54,11 @@ extern "C" std::size_t crsf_guardrail_span_parse(const std::uint8_t* data, std::
   return crsf::decode_rc_channels(result.frame.payload, g_channels) ? result.consumed : 0;
 }
 
+extern "C" std::uint32_t crsf_guardrail_gap_timeout(std::uint32_t baud)
+{
+  return crsf::byte_gap_timeout_us(baud);
+}
+
 extern "C" std::uint8_t crsf_guardrail_link_quality(int received, int missed)
 {
   for (int i = 0; i < received; ++i) {
@@ -136,6 +141,9 @@ constexpr bool decodes_expected_frame()
 
 static_assert(crsf::parse(kCenteredFrame).status == crsf::ParseStatus::kFrameReady, "span parse differs on this target");
 static_assert(crsf::parse(kCenteredFrame).consumed == kCenteredFrame.size());
+
+static_assert(!crsf::parse(kCenteredFrame).frame.extended(), "rc frames carry no routing addresses");
+static_assert(crsf::byte_gap_timeout_us(420000) > crsf::serial_time_us(crsf::kMaxFrameSize, 420000));
 
 static_assert(builds_expected_frame(), "wire format differs on this target");
 static_assert(decodes_expected_frame(), "decode differs on this target");
