@@ -3,7 +3,7 @@
 
 Deliberately an independent implementation: CRC and bit packing are written from the protocol
 facts here, so the C++ library is checked against a second implementation rather than itself.
-No vectors are taken from any third-party source (see ADR 0003).
+No vectors are taken from any third-party source.
 
 Usage: python3 generate_vectors.py [output_dir]
 """

@@ -103,9 +103,8 @@ constexpr ParseResult parse(std::span<const std::uint8_t> data) noexcept
   return ParseResult{ParseStatus::kFrameReady, frame_size, detail::make_frame_view(frame)};
 }
 
-// Calls on_frame for each valid frame in the buffer; returns how many leading bytes may be
-// discarded, leaving a trailing partial frame for the next call. A stream of pure garbage can hold
-// bytes back indefinitely, so the caller must cap its own accumulator.
+// Calls on_frame for each valid frame; returns how many leading bytes may be discarded, leaving a
+// trailing partial frame. Pure garbage holds bytes back, so the caller must cap its accumulator.
 template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
 constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame)
 {

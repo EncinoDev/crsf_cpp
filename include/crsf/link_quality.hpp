@@ -5,8 +5,7 @@
 namespace crsf {
 
 // Exponentially weighted moving average, alpha = 1 / 2^Shift. The accumulator holds the value
-// scaled by 2^Shift, so the update needs no division and no float: crsf_cpp also targets cores
-// with no FPU.
+// scaled by 2^Shift, so the update needs no division and no float - some targets have no FPU.
 template <int Shift, typename T = std::uint32_t>
 class Ewma {
   static_assert(Shift > 0, "alpha = 1/2^Shift; Shift 0 would mean no filtering at all");
@@ -29,9 +28,8 @@ private:
 
 inline constexpr std::uint8_t kLinkQualityMax = 100;
 
-// Link quality in percent. The caller drives on_missed() from its own timer: a link that stops
-// cleanly delivers no frames, so a filter fed only by arrivals would hold its last value forever.
-// Starts at 0 rather than assuming a good link.
+// Link quality in percent, starting at 0 rather than assuming a good link. The caller must drive
+// on_missed() from its own timer, or a link that stops cleanly holds its last value forever.
 template <int Shift = 4>
 class LinkQuality {
 public:

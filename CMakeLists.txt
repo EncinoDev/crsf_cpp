@@ -34,8 +34,7 @@ endif()
 
 if(CRSF_BUILD_TESTS)
     if(_crsf_embedded)
-        # Header-only means a bare-metal build compiles nothing on its own; this instantiates the
-        # library so the ADR 0006 guarantees are actually verified on the target toolchain.
+        # Header-only: without this, a bare-metal build compiles none of it.
         add_subdirectory(tests/embedded)
     else()
         if(_crsf_standalone)

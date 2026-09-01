@@ -1,7 +1,5 @@
-// Compiled only for the bare-metal target. The library is header-only, so without a translation
-// unit that instantiates it nothing would actually be compiled for the MCU and ADR 0006's
-// guarantees would go unverified. Odr-uses every public entry point; check_symbols.cmake then
-// asserts the object pulls in no heap, exception, or RTTI machinery.
+// Compiled only for the bare-metal target. Odr-uses every public entry point so a header-only
+// library actually gets compiled for the MCU and check_symbols.cmake has an object to inspect.
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -10,9 +8,8 @@
 
 namespace {
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables): mutable file-scope state is
-// the point here. These force the compiler to emit real .bss and real code for the target, which
-// is what the symbol gate then inspects; a const parser could not be fed a byte.
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables): mutable state is the point; it
+// forces real .bss and real code for the target, which is what the symbol gate inspects.
 crsf::Parser<crsf::Crc8Dvb> g_lut_parser;
 crsf::Parser<crsf::Crc8DvbBitShift> g_shift_parser;
 crsf::RcChannels g_channels{};
@@ -99,15 +96,13 @@ extern "C" std::uint32_t crsf_guardrail_bits(const std::uint8_t* data, std::size
   return static_cast<std::uint32_t>(writer.finish()) + (reader.exhausted() ? 0U : 1U);
 }
 
-// Proves the CRC and packing paths are usable in constant expressions on the target too.
+// The CRC and packing paths must also work in constant expressions on the target.
 static_assert(crsf::Crc8Dvb::update(0, 0) == crsf::Crc8DvbBitShift::update(0, 0));
 static_assert(crsf::make_centered_channels()[0] == crsf::kRcChannelMid);
 static_assert(crsf::make_failsafe_channels(crsf::make_aetr_failsafe_config(), crsf::make_centered_channels())[crsf::kAetrThrottleIndex] ==
               crsf::kRcChannelMin);
 
-// Wire-format conformance, evaluated by the compiler for whatever target it is building. The
-// codec never type-puns or memcpys a multi-byte integer, so byte order cannot vary; these
-// assertions are what turns that claim into something each target's toolchain re-checks.
+// Wire-format conformance, re-checked by whichever target's compiler builds this file.
 namespace {
 
 constexpr std::array<std::uint8_t, 26> kCenteredFrame{0xC8, 0x18, 0x16, 0xE0, 0x03, 0x1F, 0xF8, 0xC0, 0x07, 0x3E, 0xF0, 0x81, 0x0F,

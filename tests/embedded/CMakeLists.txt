@@ -1,10 +1,6 @@
-# crsf_cpp is header-only, so a freestanding build compiles nothing unless something instantiates
-# it. This target is that something: the only thing proving the library builds, stays heap-free,
-# and keeps its wire format under -fno-exceptions -fno-rtti (ADR 0006).
-#
-# Deliberately vendor-neutral: it is gated on CMAKE_SYSTEM_NAME being Generic, not on any
-# particular MCU family, and carries no CPU, HAL, or linker-script assumptions. It builds for any
-# bare-metal target whose toolchain provides freestanding <array>/<span>/<cstdint>.
+# Instantiates the header-only library so a bare-metal build has something to compile and check:
+# heap-free, exception-free, wire format intact. Gated on Generic rather than any MCU family, so it
+# builds for any target with freestanding <array>/<span>/<cstdint>.
 add_library(crsf_cpp_guardrail STATIC guardrail.cpp)
 target_link_libraries(crsf_cpp_guardrail PRIVATE crsf::crsf)
 

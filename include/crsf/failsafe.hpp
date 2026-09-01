@@ -9,9 +9,8 @@
 
 namespace crsf {
 
-// What one channel holds once the link is declared lost. The policy is per-channel because "safe"
-// is not the same value on every axis: a centred throttle is half power, while a centred steering
-// axis is exactly right.
+// What one channel holds once the link is lost. Per-channel because "safe" differs per axis: a
+// centred throttle is half power, a centred steering axis is exactly right.
 enum class FailsafeMode : std::uint8_t {
   kCenter,
   kMin,
@@ -44,9 +43,8 @@ constexpr std::uint16_t failsafe_value(const FailsafeChannel& channel, std::uint
   return kRcChannelMid;
 }
 
-// `last_valid` is only read by kHold channels, but is required rather than defaulted so a config
-// that holds cannot silently substitute a centre value. Initialise it to a safe frame at boot:
-// before the first valid frame there is no "last valid" to hold.
+// `last_valid` is read only by kHold channels, but is required so a holding config cannot
+// silently substitute a centre value. Initialise it to a safe frame at boot.
 constexpr RcChannels make_failsafe_channels(const FailsafeConfig& config, const RcChannels& last_valid) noexcept
 {
   RcChannels out{};
@@ -56,9 +54,8 @@ constexpr RcChannels make_failsafe_channels(const FailsafeConfig& config, const 
   return out;
 }
 
-// Index of the throttle channel under AETR, the order ELRS ships by default: 1 roll, 2 pitch,
-// 3 throttle, 4 yaw. A transmitter set to TAER or a custom map puts it elsewhere, which is why
-// the config is data rather than a hard-coded rule.
+// Throttle index under AETR, the order ELRS ships by default. A TAER or custom map puts it
+// elsewhere, which is why the config is data rather than a hard-coded rule.
 inline constexpr std::size_t kAetrThrottleIndex = 2;
 
 // Centres everything except throttle, which drops to minimum. Safe default for an AETR source;
