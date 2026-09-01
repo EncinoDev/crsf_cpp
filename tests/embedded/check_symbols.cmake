@@ -1,5 +1,9 @@
-# Asserts ADR 0006's guarantees on the compiled bare-metal object: no heap, no exception
-# machinery, no RTTI. Run as a POST_BUILD step; needs OBJECT and NM_TOOL on the command line.
+# Rejects heap, exception and RTTI symbols in a compiled bare-metal object. POST_BUILD step;
+# needs OBJECT and NM_TOOL, and LABEL names the library in its messages.
+if(NOT DEFINED LABEL)
+    set(LABEL "crsf_cpp")
+endif()
+
 if(NOT EXISTS "${OBJECT}")
     message(FATAL_ERROR "guardrail object not found: ${OBJECT}")
 endif()
@@ -29,7 +33,7 @@ foreach(_pattern IN LISTS _forbidden)
 endforeach()
 
 if(NOT _violations STREQUAL "")
-    message(FATAL_ERROR "crsf_cpp embedded guardrail failed on ${OBJECT}:\n${_violations}\nSymbols:\n${_symbols}")
+    message(FATAL_ERROR "${LABEL} embedded guardrail failed on ${OBJECT}:\n${_violations}\nSymbols:\n${_symbols}")
 endif()
 
-message(STATUS "crsf_cpp guardrail: no heap/exception/RTTI symbols in ${OBJECT}")
+message(STATUS "${LABEL} guardrail: no heap/exception/RTTI symbols in ${OBJECT}")
