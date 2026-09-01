@@ -18,6 +18,7 @@ crsf::Parser<crsf::Crc8DvbBitShift> g_shift_parser;
 crsf::RcChannels g_channels{};
 std::array<std::uint8_t, crsf::kMaxFrameSize> g_frame{};
 crsf::LinkQuality<4> g_quality{};
+std::uint8_t g_ext_origin = 0;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 }  // namespace
@@ -52,6 +53,17 @@ extern "C" std::size_t crsf_guardrail_span_parse(const std::uint8_t* data, std::
     return 0;
   }
   return crsf::decode_rc_channels(result.frame.payload, g_channels) ? result.consumed : 0;
+}
+
+// scan() takes a callable: proves the lambda path allocates nothing on the target either.
+extern "C" std::size_t crsf_guardrail_scan(const std::uint8_t* data, std::size_t size)
+{
+  std::size_t frames = 0;
+  const std::size_t consumed = crsf::scan(std::span<const std::uint8_t>{data, size}, [&frames](const crsf::FrameView& frame) {
+    g_ext_origin = frame.ext_origin();
+    frames += crsf::decode_rc_channels(frame.payload, g_channels) ? 1U : 0U;
+  });
+  return consumed + frames;
 }
 
 extern "C" std::uint32_t crsf_guardrail_gap_timeout(std::uint32_t baud)
@@ -115,6 +127,13 @@ constexpr bool builds_expected_frame()
   return true;
 }
 
+constexpr bool scans_expected_frame()
+{
+  std::size_t frames = 0;
+  const std::size_t consumed = crsf::scan(kCenteredFrame, [&frames](const crsf::FrameView&) { ++frames; });
+  return frames == 1 && consumed == kCenteredFrame.size();
+}
+
 constexpr bool decodes_expected_frame()
 {
   crsf::Parser<> parser;
@@ -142,6 +161,7 @@ constexpr bool decodes_expected_frame()
 static_assert(crsf::parse(kCenteredFrame).status == crsf::ParseStatus::kFrameReady, "span parse differs on this target");
 static_assert(crsf::parse(kCenteredFrame).consumed == kCenteredFrame.size());
 
+static_assert(scans_expected_frame(), "scan differs on this target");
 static_assert(!crsf::parse(kCenteredFrame).frame.extended(), "rc frames carry no routing addresses");
 static_assert(crsf::byte_gap_timeout_us(420000) > crsf::serial_time_us(crsf::kMaxFrameSize, 420000));
 

@@ -103,6 +103,26 @@ constexpr ParseResult parse(std::span<const std::uint8_t> data) noexcept
   return ParseResult{ParseStatus::kFrameReady, frame_size, detail::make_frame_view(frame)};
 }
 
+// Calls on_frame for each valid frame in the buffer; returns how many leading bytes may be
+// discarded, leaving a trailing partial frame for the next call. A stream of pure garbage can hold
+// bytes back indefinitely, so the caller must cap its own accumulator.
+template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
+constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame)
+{
+  std::size_t offset = 0;
+  while (offset < data.size()) {
+    const ParseResult result = parse<Crc8Policy>(data.subspan(offset));
+    if (result.status == ParseStatus::kIncomplete) {
+      break;
+    }
+    if (result.status == ParseStatus::kFrameReady) {
+      on_frame(result.frame);
+    }
+    offset += result.consumed;
+  }
+  return offset;
+}
+
 // Byte-at-a-time parser for a per-byte-interrupt UART, where no contiguous span exists yet. Holds
 // no clock: a caller needing gap-based resync runs its own timer and calls reset().
 template <typename Crc8Policy = Crc8Dvb>

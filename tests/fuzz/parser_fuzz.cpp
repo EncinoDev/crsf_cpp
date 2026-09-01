@@ -69,5 +69,20 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     remaining = remaining.subspan(result.consumed);
   }
 
+  // scan() must agree with the hand loop above, and hand out no view outside the caller's buffer.
+  const std::size_t expected = size - remaining.size();
+  const std::size_t scanned = crsf::scan(std::span<const std::uint8_t>{data, size}, [data, size](const crsf::FrameView& frame) {
+    if (frame.payload.data() < data || frame.payload.data() + frame.payload.size() > data + size) {
+      __builtin_trap();
+    }
+    const auto ext = frame.ext_payload();
+    if (!ext.empty() && (ext.data() < data || ext.data() + ext.size() > data + size)) {
+      __builtin_trap();
+    }
+  });
+  if (scanned != expected) {
+    __builtin_trap();
+  }
+
   return 0;
 }

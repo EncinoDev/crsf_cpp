@@ -16,6 +16,7 @@ add_executable(
     failsafe_test.cpp
     span_parse_test.cpp
     link_quality_test.cpp
+    scan_test.cpp
     extended_frame_test.cpp
     timing_test.cpp
     vectors_test.cpp)

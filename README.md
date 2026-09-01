@@ -182,6 +182,10 @@ struct ParseResult {
   FrameView   frame;      // valid when status == kFrameReady; points into `data`
 };
 
+// Caller owns the bytes, buffer may hold several frames. Returns bytes consumed.
+template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
+std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame);
+
 // Parser owns the bytes. Accumulates across calls.
 template <typename Crc8Policy = Crc8Dvb>
 class Parser {
@@ -201,6 +205,11 @@ class Parser {
 | `FrameView` lifetime | As long as you keep the buffer | Until the next `feed()` |
 | Recovery after a bad frame | Slides 1 byte, retries | Discards the buffer |
 | Natural transport | DMA, or any contiguous block | Per-byte RX interrupt |
+
+**Use `scan()` when the buffer may hold several frames** — a socket read, or an accumulator you
+append to. It loops `parse()`, calls `on_frame` for each valid frame, and returns how many leading
+bytes you may erase; a trailing partial frame is left for the next call. A stream of pure garbage
+can hold bytes back indefinitely, so cap your own accumulator.
 
 **Use `parse()` when the bytes are already contiguous in memory** — a DMA buffer, a test vector, a
 block read from a file or socket. This is the zero-copy path: `frame.payload` aliases your buffer,
@@ -482,9 +491,10 @@ cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 cmake --preset asan  && cmake --build --preset asan  && ctest --preset asan
 ```
 
-75 tests covering CRC equivalence and the public catalog value, bit-packing round trips across
+82 tests covering CRC equivalence and the public catalog value, bit-packing round trips across
 widths 10–13, parser framing (length bounds, CRC rejection, recovery, back-to-back frames),
-extended-header routing fields, baud-derived gap timeouts, failsafe mode resolution, and full build -> parse -> decode cycles.
+`scan()` over multi-frame and garbage buffers, extended-header routing fields, baud-derived gap
+timeouts, failsafe mode resolution, and full build -> parse -> decode cycles.
 
 Test vectors are generated data, not hand-written literals:
 
@@ -504,7 +514,8 @@ cmake --build build/fuzz --target crsf_cpp_parser_fuzz
 ```
 
 The fuzzer drives the parser with arbitrary bytes under ASan/UBSan and asserts that any accepted
-frame survives a rebuild and re-parse unchanged.
+frame survives a rebuild and re-parse unchanged, that `scan()` agrees with an equivalent hand-rolled
+`parse()` loop, and that neither hands out a view outside the caller's buffer.
 
 Benchmark: `./build/release/crsf_cpp/tests/crsf_cpp_bench`.
 
