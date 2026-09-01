@@ -19,7 +19,7 @@ These are contractual; the test suite and CI enforce them.
 | No dynamic allocation | No `new`/`malloc` on any path. A build step runs `nm` over the compiled bare-metal object and fails on any heap, exception, or RTTI symbol. |
 | No exceptions, no RTTI | Builds with `-fno-exceptions -fno-rtti`. All errors are return values. |
 | No global mutable state | Every parser owns its buffer; multiple instances are independent. |
-| No clock dependency | Parsing is a pure function of the byte sequence (see [Timeouts](#timeouts-and-resynchronisation)). |
+| No clock dependency | Parsing is a pure function of the byte sequence; `timing.hpp` supplies gap thresholds as values, never a timer (see [Timeouts](#timeouts-and-resynchronisation)). |
 | Bounded execution | No unbounded loops; work per byte is constant, per frame is linear in frame length. |
 | Memory-safe on malformed input | Out-of-range reads return zeros; writes refuse to overrun. Fuzz-tested. |
 | `constexpr`-friendly | CRC, packing, parsing and building are usable in constant expressions. |
@@ -198,13 +198,14 @@ class Parser {
 
 #### Which one to call
 
-| | `parse(span)` | `Parser::feed(byte)` |
-| --- | --- | --- |
-| Owns the bytes | Caller | Parser (64 B internal) |
-| State / RAM | None — free function | 84 B per instance |
-| `FrameView` lifetime | As long as you keep the buffer | Until the next `feed()` |
-| Recovery after a bad frame | Slides 1 byte, retries | Discards the buffer |
-| Natural transport | DMA, or any contiguous block | Per-byte RX interrupt |
+| | `parse(span)` | `scan(span, fn)` | `Parser::feed(byte)` |
+| --- | --- | --- | --- |
+| Owns the bytes | Caller | Caller | Parser (64 B internal) |
+| Frames per call | One | All that are complete | One, across many calls |
+| State / RAM | None — free function | None — free function | 84 B per instance |
+| `FrameView` lifetime | As long as you keep the buffer | Inside the callback | Until the next `feed()` |
+| Recovery after a bad frame | Slides 1 byte, retries | Slides 1 byte, keeps going | Discards the buffer |
+| Natural transport | DMA, or any contiguous block | Socket read, accumulator | Per-byte RX interrupt |
 
 **Use `scan()` when the buffer may hold several frames** — a socket read, or an accumulator you
 append to. It loops `parse()`, calls `on_frame` for each valid frame, and returns how many leading
@@ -401,6 +402,20 @@ std::size_t build_rc_channels_frame(std::uint8_t address, const RcChannels& chan
 
 Returns bytes written, or `0` if the payload exceeds `kMaxPayloadSize` or `out` is too small.
 Never writes outside `out`.
+
+### `crsf/timing.hpp` — wire timing
+
+```cpp
+std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) noexcept;
+std::uint32_t byte_gap_timeout_us(std::uint32_t baud) noexcept;
+```
+
+Both `constexpr`, both assume 10 bits per byte (1 start, 8 data, 1 stop, no parity), both round up.
+A zero baud yields zero rather than dividing by zero.
+
+`byte_gap_timeout_us()` is a maximal frame at that rate plus 15% — 1752 us at 420000 baud. It is a
+*value*, not a timer: the parser holds no clock, so you run the timer and call `Parser::reset()`.
+See [Timeouts](#timeouts-and-resynchronisation).
 
 ### `crsf/bit_packing.hpp` — N-bit stream primitives
 
