@@ -17,6 +17,9 @@ inline constexpr std::size_t kMaxFrameSize = 64;
 // Value the length byte declares: covers type + payload + crc (not address or itself).
 inline constexpr std::uint8_t kMinLengthFieldValue = kTypeFieldSize + kCrcFieldSize;
 inline constexpr std::uint8_t kMaxLengthFieldValue = static_cast<std::uint8_t>(kMaxFrameSize - kAddressFieldSize - kLengthFieldSize);
+// 60: what the framing arithmetic leaves. Betaflight says 58 because it also subtracts the two
+// extended-header routing bytes unconditionally; here those belong to the payload of the types
+// that carry them, so the deduction is made per type rather than for all of them.
 inline constexpr std::size_t kMaxPayloadSize = kMaxLengthFieldValue - kTypeFieldSize - kCrcFieldSize;
 
 enum class FrameType : std::uint8_t {

@@ -407,15 +407,23 @@ Never writes outside `out`.
 
 ```cpp
 std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) noexcept;
-std::uint32_t byte_gap_timeout_us(std::uint32_t baud) noexcept;
+std::uint32_t idle_gap_timeout_us(std::uint32_t baud) noexcept;
+std::uint32_t frame_assembly_timeout_us(std::uint32_t baud) noexcept;
 ```
 
-Both `constexpr`, both assume 10 bits per byte (1 start, 8 data, 1 stop, no parity), both round up.
+All `constexpr`, all assume 10 bits per byte (1 start, 8 data, 1 stop, no parity), all round up.
 A zero baud yields zero rather than dividing by zero.
 
-`byte_gap_timeout_us()` is a maximal frame at that rate plus 15% — 1752 us at 420000 baud. It is a
-*value*, not a timer: the parser holds no clock, so you run the timer and call `Parser::reset()`.
-See [Timeouts](#timeouts-and-resynchronisation).
+The two timeouts measure different events and differ by about 70x at 420000 baud, so pick by the
+event you are timing:
+
+- `idle_gap_timeout_us()` is one character time — 24 us at 420000. This is the line-idle period
+  that ends a frame, and what a USART IDLE line interrupt reports at no CPU cost.
+- `frame_assembly_timeout_us()` is a maximal frame at that rate plus 15% — 1752 us at 420000. This
+  is how long a whole frame may take to arrive before you give up on it.
+
+Both are *values*, not timers: the parser holds no clock, so you run the timer and call
+`Parser::reset()`. See [Timeouts](#timeouts-and-resynchronisation).
 
 ### `crsf/bit_packing.hpp` — N-bit stream primitives
 
@@ -457,15 +465,20 @@ The parser holds no clock, which is what keeps it platform-neutral. Framing reco
 an invalid length byte is rejected immediately, and a bad frame fails the CRC gate and resets.
 
 If a source can stall mid-frame and later resume, a stale partial frame would merge with the new
-one and cost a single frame before recovery. If that matters, run a byte-gap timer in your driver
-and call `reset()` when it expires. `crsf/timing.hpp` gives you the threshold:
+one and cost a single frame before recovery. If that matters, run an idle timer in your driver
+and call `reset()` when it expires. `crsf/timing.hpp` gives you the thresholds:
 
 ```cpp
-std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) noexcept;  // rounded up
-std::uint32_t byte_gap_timeout_us(std::uint32_t baud) noexcept;  // max frame + 15%; 1752 us at 420k
+std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) noexcept;       // rounded up
+std::uint32_t idle_gap_timeout_us(std::uint32_t baud) noexcept;        // 1 char; 24 us at 420k
+std::uint32_t frame_assembly_timeout_us(std::uint32_t baud) noexcept;  // max frame + 15%; 1752 us
 ```
 
-Both are `constexpr` and assume 10 bits per byte (1 start, 8 data, 1 stop, no parity). A zero baud
+Which one depends on the event: resync on line idle uses `idle_gap_timeout_us()`, abandoning a
+frame that never finished uses `frame_assembly_timeout_us()`. They differ by 70x — reaching for the
+wrong one waits far too long, or not long enough.
+
+All are `constexpr` and assume 10 bits per byte (1 start, 8 data, 1 stop, no parity). A zero baud
 yields zero rather than dividing by zero. Taking `baud` as an argument is the point: a threshold
 fixed for one rate is far too short at the slow end of an auto-detect sweep.
 

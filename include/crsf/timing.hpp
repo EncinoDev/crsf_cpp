@@ -22,9 +22,17 @@ constexpr std::uint32_t serial_time_us(std::size_t bytes, std::uint32_t baud) no
 
 inline constexpr std::uint32_t kFrameGapMarginPercent = 15;
 
-// Idle time after which an arriving byte must start a new frame. Parser holds no clock: a caller
-// wanting gap-based resync times this itself and calls Parser::reset().
-constexpr std::uint32_t byte_gap_timeout_us(std::uint32_t baud) noexcept
+// Idle time that ends a frame: one character time, what a USART IDLE line interrupt reports.
+// 24 us at 420000 baud.
+constexpr std::uint32_t idle_gap_timeout_us(std::uint32_t baud) noexcept
+{
+  return serial_time_us(1, baud);
+}
+
+// Time to allow a whole frame to arrive before abandoning it, a maximal frame plus 15%: 1752 us at
+// 420000 baud. Seventy times `idle_gap_timeout_us` — the two measure different events. Parser holds
+// no clock: a caller wanting timeout-based resync times this itself and calls Parser::reset().
+constexpr std::uint32_t frame_assembly_timeout_us(std::uint32_t baud) noexcept
 {
   const std::uint32_t worst_case = serial_time_us(kMaxFrameSize, baud);
   return worst_case + (worst_case * kFrameGapMarginPercent) / 100;

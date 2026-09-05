@@ -20,6 +20,8 @@ public:
     return value();
   }
 
+  // Decay stops subtracting below 2^Shift, so the accumulator floors there rather than at zero.
+  // value() shifts that floor back to 0; a caller reading the accumulator itself inherits it.
   [[nodiscard]] constexpr T value() const noexcept { return static_cast<T>(accumulator_ >> Shift); }
 
 private:

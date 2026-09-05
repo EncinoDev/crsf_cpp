@@ -63,9 +63,14 @@ extern "C" std::size_t crsf_guardrail_scan(const std::uint8_t* data, std::size_t
   return consumed + frames;
 }
 
-extern "C" std::uint32_t crsf_guardrail_gap_timeout(std::uint32_t baud)
+extern "C" std::uint32_t crsf_guardrail_frame_assembly_timeout(std::uint32_t baud)
 {
-  return crsf::byte_gap_timeout_us(baud);
+  return crsf::frame_assembly_timeout_us(baud);
+}
+
+extern "C" std::uint32_t crsf_guardrail_idle_gap_timeout(std::uint32_t baud)
+{
+  return crsf::idle_gap_timeout_us(baud);
 }
 
 extern "C" std::uint8_t crsf_guardrail_link_quality(int received, int missed)
@@ -158,7 +163,8 @@ static_assert(crsf::parse(kCenteredFrame).consumed == kCenteredFrame.size());
 
 static_assert(scans_expected_frame(), "scan differs on this target");
 static_assert(!crsf::parse(kCenteredFrame).frame.extended(), "rc frames carry no routing addresses");
-static_assert(crsf::byte_gap_timeout_us(420000) > crsf::serial_time_us(crsf::kMaxFrameSize, 420000));
+static_assert(crsf::frame_assembly_timeout_us(420000) > crsf::serial_time_us(crsf::kMaxFrameSize, 420000));
+static_assert(crsf::idle_gap_timeout_us(420000) == crsf::serial_time_us(1, 420000));
 
 static_assert(builds_expected_frame(), "wire format differs on this target");
 static_assert(decodes_expected_frame(), "decode differs on this target");
