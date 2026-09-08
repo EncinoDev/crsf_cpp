@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Bohdan Puhach
+
 // Compiled only for the bare-metal target. Odr-uses every public entry point so a header-only
 // library actually gets compiled for the MCU and check_symbols.cmake has an object to inspect.
 #include <array>
