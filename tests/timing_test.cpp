@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Bohdan Puhach
+
 #include <gtest/gtest.h>
 
 #include "crsf/crsf.hpp"

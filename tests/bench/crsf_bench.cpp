@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Bohdan Puhach
+
 // Standalone benchmark: no external dependency, so the library stays extractable as-is.
 #include <array>
 #include <chrono>
