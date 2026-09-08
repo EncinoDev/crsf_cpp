@@ -103,10 +103,16 @@ constexpr ParseResult parse(std::span<const std::uint8_t> data) noexcept
   return ParseResult{ParseStatus::kFrameReady, frame_size, detail::make_frame_view(frame)};
 }
 
-// Calls on_frame for each valid frame; returns how many leading bytes may be discarded, leaving a
-// trailing partial frame. Pure garbage holds bytes back, so the caller must cap its accumulator.
-template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
-constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame)
+// Calls on_frame for each valid frame and on_crc_error for each byte rejected by its checksum;
+// returns how many leading bytes may be discarded, leaving a trailing partial frame. Pure garbage
+// holds bytes back, so the caller must cap its accumulator.
+//
+// A rejection is worth reporting because its absence is evidence too: a stream aligned to the right
+// rate and polarity resyncs at frame boundaries and rejects nothing, while one that is not produces
+// rejections continuously and passes a checksum only by chance. A caller that only counts the
+// passes cannot tell those apart.
+template <typename Crc8Policy = Crc8Dvb, typename OnFrame, typename OnCrcError>
+constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame, OnCrcError&& on_crc_error)
 {
   std::size_t offset = 0;
   while (offset < data.size()) {
@@ -117,9 +123,18 @@ constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_fram
     if (result.status == ParseStatus::kFrameReady) {
       on_frame(result.frame);
     }
+    else if (result.status == ParseStatus::kCrcMismatch) {
+      on_crc_error();
+    }
     offset += result.consumed;
   }
   return offset;
+}
+
+template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
+constexpr std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame)
+{
+  return scan<Crc8Policy>(data, on_frame, [] {});
 }
 
 // Byte-at-a-time parser for a per-byte-interrupt UART, where no contiguous span exists yet. Holds
