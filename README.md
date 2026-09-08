@@ -75,8 +75,21 @@ FetchContent_MakeAvailable(crsf_cpp)
 target_link_libraries(your_target PRIVATE crsf::crsf)
 ```
 
+Or installed once and found as a package:
+
+```bash
+cmake -S . -B build -DCRSF_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --install build
+```
+
+```cmake
+find_package(crsf 0.1 REQUIRED)
+target_link_libraries(your_target PRIVATE crsf::crsf)
+```
+
 `crsf::crsf` is an `INTERFACE` target carrying include paths and `cxx_std_20` only — nothing is
-compiled into a library archive, so cross-compiling needs no per-target artifacts.
+compiled into a library archive, so cross-compiling needs no per-target artifacts and the installed
+package is architecture-independent: one install serves the host build and every cross build.
 
 Single umbrella include:
 
@@ -168,7 +181,7 @@ other polynomials.
 
 ### `crsf/parser.hpp` — frame parser
 
-Two entry points do the same job — find a frame boundary, validate length and CRC, hand back a
+Three entry points do the same job — find a frame boundary, validate length and CRC, hand back a
 view. They differ in **who owns the bytes**.
 
 ```cpp
@@ -185,6 +198,10 @@ struct ParseResult {
 // Caller owns the bytes, buffer may hold several frames. Returns bytes consumed.
 template <typename Crc8Policy = Crc8Dvb, typename OnFrame>
 std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame);
+
+// Same, and reports each frame the checksum rejected.
+template <typename Crc8Policy = Crc8Dvb, typename OnFrame, typename OnCrcError>
+std::size_t scan(std::span<const std::uint8_t> data, OnFrame&& on_frame, OnCrcError&& on_crc_error);
 
 // Parser owns the bytes. Accumulates across calls.
 template <typename Crc8Policy = Crc8Dvb>
@@ -211,6 +228,23 @@ class Parser {
 append to. It loops `parse()`, calls `on_frame` for each valid frame, and returns how many leading
 bytes you may erase; a trailing partial frame is left for the next call. A stream of pure garbage
 can hold bytes back indefinitely, so cap your own accumulator.
+
+The three-argument overload also calls `on_crc_error` — taking no arguments — once per frame the
+checksum rejected. **The rejections are evidence, not noise.** A stream read at the right baud and
+polarity resynchronises at frame boundaries and rejects almost nothing; one read at the wrong rate
+produces rejections continuously and passes a checksum only by chance. A caller that counts only
+the frames that passed cannot tell a weak link from a misread one, which is why an auto-baud sweep
+wants both counts. Ignore it — use the two-argument overload — when the link parameters are known
+and fixed.
+
+```cpp
+std::size_t accepted = 0;
+std::size_t rejected = 0;
+const std::size_t used = crsf::scan(
+    buffer,
+    [&](const crsf::FrameView& frame) { ++accepted; handle(frame); },
+    [&] { ++rejected; });
+```
 
 **Use `parse()` when the bytes are already contiguous in memory** — a DMA buffer, a test vector, a
 block read from a file or socket. This is the zero-copy path: `frame.payload` aliases your buffer,
@@ -446,6 +480,34 @@ CRSF packs channels as one continuous **LSB-first** bitstream: bit 0 is the leas
 of byte 0, and values straddle byte boundaries. Widths 10–13 are supported, so the same primitives
 cover subset-RC frames.
 
+### `crsf/version.hpp` — library version
+
+```cpp
+inline constexpr std::uint32_t kVersionMajor;   // 0
+inline constexpr std::uint32_t kVersionMinor;   // 1
+inline constexpr std::uint32_t kVersionPatch;   // 0
+```
+
+Compile-time constants, so a consumer can `static_assert` the version it was written against rather
+than discover a missing symbol at link time — which a header-only library would never give it.
+They track the git tag and the CMake `project(... VERSION)`; `find_package(crsf 0.1 REQUIRED)`
+checks the same number.
+
+---
+
+## Versioning and stability
+
+[Semantic Versioning](https://semver.org). Below 1.0 the minor number carries breaking changes, as
+SemVer allows, and every one of them is listed in [`CHANGELOG.md`](CHANGELOG.md).
+
+What is in scope for a compatibility promise: the names, signatures and semantics of everything in
+the [API reference](#api-reference) above, and the wire bytes the codec produces. What is not:
+anything in `namespace crsf::detail`, the layout and size of `Parser`, the exact footprint and
+throughput figures, and the test and benchmark targets.
+
+The wire format itself is not ours to version — it is CRSF, and a change to what the codec puts on
+the wire would be a bug fix, not a release.
+
 ---
 
 ## Concurrency and ISR use
@@ -557,10 +619,41 @@ cmake --preset stm32-debug && cmake --build --preset stm32-debug
 A build that starts allocating, throwing, or emitting RTTI fails there rather than in review. Any
 `Generic` toolchain works; the STM32 preset is simply the one this repo ships.
 
+## Repository layout
+
+| Path | What |
+| --- | --- |
+| `include/crsf/` | The library. Eleven headers; `crsf.hpp` includes them all |
+| `tests/` | GoogleTest suite, generated vectors, benchmark |
+| `tests/embedded/` | Freestanding guardrail TU, the `nm` symbol gate, the architecture sweep |
+| `tests/fuzz/` | libFuzzer target for the parser |
+| `cmake/toolchains/` | `arm-none-eabi` toolchain file for the freestanding presets |
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the build, format and test gates a change has to pass —
+they are the same ones CI runs, and `make quality` runs all of them locally.
+
+Security reports: [`SECURITY.md`](SECURITY.md).
+
 ## License and provenance
 
-Apache-2.0.
+Apache-2.0 — see [`LICENSE`](LICENSE), with copyright and provenance in [`NOTICE`](NOTICE). Every
+source file carries an `SPDX-License-Identifier`, because a header-only library is vendored one
+header at a time and the file is the unit that travels.
 
-CRSF is a published protocol; this implementation was written from protocol facts (frame layout,
-CRC polynomial, bit packing). It contains no third-party protocol source, and its test vectors are
-generated by the script in this repository rather than taken from another project.
+CRSF is a published protocol. This is an independent implementation of it, written from protocol
+facts — frame layout, the CRC-8/DVB-S2 polynomial, the LSB-first bit packing, and the length and
+checksum validity rules.
+
+**On Betaflight.** Betaflight's CRSF receiver (GPL-3.0) was consulted as a behavioural reference for
+those facts. No Betaflight code was copied, adapted, translated, linked or redistributed, and this
+library is not a derivative work of it: the parser is a value type with no globals and no clock, the
+channel codec is explicit shift/mask arithmetic rather than a packed-bitfield reinterpret, and the
+CRC is a compile-time policy pair. Where a source comment names Betaflight, it is citing a protocol
+fact or recording where this implementation deliberately differs — `protocol.hpp`'s maximum payload
+size is the example, and it differs on purpose. Test vectors are generated by
+`tests/vectors/generate_vectors.py` here, not taken from anywhere.
+
+CRSF and Crossfire are trademarks of Team BlackSheep. This project is not affiliated with, endorsed
+by, or sponsored by TBS.
