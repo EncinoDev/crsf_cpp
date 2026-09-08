@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Bohdan Puhach
+
 """Regenerates CRSF test vectors from the protocol definition.
 
 Deliberately an independent implementation: CRC and bit packing are written from the protocol

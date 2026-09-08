@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Bohdan Puhach
+
 # Compiles the guardrail TU for a spread of architectures to prove crsf_cpp carries no CPU, word
 # size, or byte order assumptions. The TU's static_asserts pin the exact wire bytes, so a target
 # that compiles has also confirmed byte-identical framing -- big-endian targets included.
