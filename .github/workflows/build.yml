@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang clang-format gcc-arm-none-eabi binutils-arm-none-eabi
+
+      - name: Host build and test
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug
+          ctest --preset debug
+
+      - name: Sanitized build and test
+        run: |
+          cmake --preset asan
+          cmake --build --preset asan
+          ctest --preset asan
+
+      # Header-only: without a freestanding build nothing here is compiled for a target at all,
+      # and the no-heap/no-exceptions/no-RTTI guarantee is checked by nm over the resulting object.
+      - name: Freestanding build and symbol gate
+        run: |
+          cmake --preset stm32-debug
+          cmake --build --preset stm32-debug
+          cmake --preset stm32-release
+          cmake --build --preset stm32-release
+
+      # Ten architectures, four of them big-endian. The guardrail's static_asserts pin the wire
+      # bytes, so a target that compiles has also confirmed byte-identical framing.
+      - name: Portability across architectures
+        run: ./tests/embedded/check_portability.sh
+
+      - name: Format
+        run: make format-check
+
+      - name: Fuzz
+        run: |
+          cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCRSF_BUILD_FUZZERS=ON
+          cmake --build build/fuzz --target crsf_cpp_parser_fuzz
+          ./build/fuzz/tests/crsf_cpp_parser_fuzz -runs=200000 -max_len=256

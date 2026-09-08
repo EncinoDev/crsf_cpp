@@ -56,7 +56,7 @@ without needing to run anything there. `tests/embedded/check_portability.sh` com
 | `armeb`, `mips`, `powerpc`, `sparc` | **Big-endian** |
 
 ```bash
-./crsf_cpp/tests/embedded/check_portability.sh     # 10/10 targets built
+./tests/embedded/check_portability.sh     # 10/10 targets built
 ```
 
 ## Integration
@@ -70,7 +70,7 @@ Or standalone via `FetchContent`:
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(crsf_cpp GIT_REPOSITORY <url> GIT_TAG <tag>)
+FetchContent_Declare(crsf_cpp GIT_REPOSITORY https://github.com/EncinoDev/crsf_cpp.git GIT_TAG v0.1.0)
 FetchContent_MakeAvailable(crsf_cpp)
 target_link_libraries(your_target PRIVATE crsf::crsf)
 ```
@@ -519,7 +519,7 @@ cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 cmake --preset asan  && cmake --build --preset asan  && ctest --preset asan
 ```
 
-82 tests covering CRC equivalence and the public catalog value, bit-packing round trips across
+84 tests covering CRC equivalence and the public catalog value, bit-packing round trips across
 widths 10–13, parser framing (length bounds, CRC rejection, recovery, back-to-back frames),
 `scan()` over multi-frame and garbage buffers, extended-header routing fields, baud-derived gap
 timeouts, failsafe mode resolution, and full build -> parse -> decode cycles.
@@ -527,7 +527,7 @@ timeouts, failsafe mode resolution, and full build -> parse -> decode cycles.
 Test vectors are generated data, not hand-written literals:
 
 ```bash
-python3 crsf_cpp/tests/vectors/generate_vectors.py
+python3 tests/vectors/generate_vectors.py
 ```
 
 The generator implements CRC and bit packing independently in Python, so the C++ code is checked
@@ -538,14 +538,14 @@ Fuzzing (Clang):
 ```bash
 cmake -S . -B build/fuzz -DCMAKE_CXX_COMPILER=clang++ -DCRSF_BUILD_FUZZERS=ON
 cmake --build build/fuzz --target crsf_cpp_parser_fuzz
-./build/fuzz/crsf_cpp/tests/crsf_cpp_parser_fuzz -runs=1000000
+./build/fuzz/tests/crsf_cpp_parser_fuzz -runs=1000000
 ```
 
 The fuzzer drives the parser with arbitrary bytes under ASan/UBSan and asserts that any accepted
 frame survives a rebuild and re-parse unchanged, that `scan()` agrees with an equivalent hand-rolled
 `parse()` loop, and that neither hands out a view outside the caller's buffer.
 
-Benchmark: `./build/release/crsf_cpp/tests/crsf_cpp_bench`.
+Benchmark: `./build/release/tests/crsf_cpp_bench`.
 
 Bare-metal guarantees are checked by building for a freestanding target, which compiles
 `tests/embedded/guardrail.cpp` and then runs the symbol gate over the resulting object:

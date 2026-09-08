@@ -1,0 +1,26 @@
+# Build output — reproducible from CMake.
+build/
+build-*/
+/out/
+
+# CMake artifacts from in-source or manual builds.
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+compile_commands.json
+install_manifest.txt
+_deps/
+
+# Compiled objects and host binaries.
+*.d
+*.o
+*.obj
+*.a
+*.so
+*.exe
+*.out
+
+# OS metadata.
+.DS_Store
+Thumbs.db

@@ -1,0 +1,156 @@
+# Static analysis for this repo. clang-tidy walks up from each source file and takes the first
+# config it finds, so this supersedes the course-wide /.clang-tidy baked into the dev container
+# image (source: .devcontainer/.clang-tidy) for everything under this repo. It is deliberately
+# NOT duplicated there -- one ruleset, one place to change it.
+#
+# Shape follows real embedded C++ projects (catsystems/cats-embedded) rather than the
+# "enable every group" default: broad groups minus a documented disable list. Each disable
+# below has a reason; nothing is switched off merely because it was noisy.
+#
+# Aliased checks are NOT enabled twice: hicpp-* is deliberately absent because the large
+# majority of its checks are aliases of cppcoreguidelines-*/modernize-*/readability-*, which
+# would report every finding twice and require ~11 lines of de-duplication for no new coverage.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-avoid-c-arrays,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  -misc-include-cleaner,
+  -misc-const-correctness,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-avoid-const-params-in-decls,
+  -readability-use-anyofallof,
+
+# Reasons for the disables above:
+#   bugprone-easily-swappable-parameters      - fires on any two same-typed params; very noisy.
+#   cert-*                                    - kept: CERT C++ rules are relevant to a safety device.
+#   *-avoid-magic-numbers, readability-magic-numbers
+#                                             - test vectors and protocol literals ARE the data;
+#                                               naming every 0x16/26 hurts readability.
+#   pro-bounds-constant-array-index           - requires gsl::at(); crsf_cpp is dependency-free
+#                                               by ADR 0001, so this can never be satisfied.
+#   pro-bounds-pointer-arithmetic,
+#   pro-bounds-array-to-pointer-decay         - same GSL dependency; unavoidable at C ABI edges
+#                                               (libFuzzer hands us a raw pointer + size).
+#   pro-type-vararg                           - std::printf in the benchmark, which is deliberately
+#                                               dependency-free so the library stays extractable.
+#   avoid-c-arrays / modernize-avoid-c-arrays - C arrays are unavoidable at the firmware boundary.
+#   modernize-use-trailing-return-type        - style-only, and a minority style; contradicts the
+#                                               rest of this codebase. Disabled by cpp-best-practices
+#                                               and cats-embedded alike.
+#   readability-identifier-length             - flags i, n, x.
+#   misc-non-private-member-variables-in-classes
+#                                             - FrameView is a deliberate public aggregate.
+#   misc-include-cleaner, misc-const-correctness
+#                                             - both disabled in llvm-project's own .clang-tidy;
+#                                               include-cleaner is IWYU-style noise on a
+#                                               header-only library with an umbrella header.
+#   readability-use-anyofallof                - would pull <algorithm> into a freestanding
+#                                               constexpr TU to replace a 3-line loop.
+
+# Errors are for defects, not for style. Analyzer/bugprone/cert findings break the build;
+# modernize/readability findings stay warnings so they never block an iteration.
+WarningsAsErrors: >
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+
+# Analyse our own headers, not GoogleTest or system headers.
+HeaderFilterRegex: '(^|/)(crsf_cpp|bridge_stm32|master_rpi|link_proto)/(include|src|tests)/'
+
+FormatStyle: file
+
+CheckOptions:
+  # --- Types ---
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+
+  # --- Functions and variables ---
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+
+  # --- Constants ---
+  # The generic 'Constant' option matches EVERY const-qualified variable, including const
+  # locals, so setting it to k+CamelCase demands `const auto kFrame = ...` inside functions.
+  # clang-tidy falls back from specific to generic, so the specific options below are what
+  # actually encode the intended rule: kName for namespace-scope/static/constexpr constants,
+  # lower_case for const locals, parameters and members.
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: k
+  - key: readability-identifier-naming.StaticConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.StaticConstantPrefix
+    value: k
+  - key: readability-identifier-naming.ClassConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.ClassConstantPrefix
+    value: k
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantPrefix
+    value: k
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstantParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstantMemberCase
+    value: lower_case
+
+  # --- Members ---
+  # A trailing underscore marks privacy, so it must not be applied to public members: the
+  # generic 'Member' option would put it on plain aggregates like FrameView.
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: _
+  - key: readability-identifier-naming.PublicMemberCase
+    value: lower_case
+
+  # libFuzzer's entry point is an externally mandated ABI name and cannot be renamed.
+  # Precedent: llvm-project's own .clang-tidy ignores exactly this symbol.
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: LLVMFuzzerTestOneInput
